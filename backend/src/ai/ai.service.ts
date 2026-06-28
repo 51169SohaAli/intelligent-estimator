@@ -21,12 +21,23 @@ export class AiService implements OnModuleInit {
     Task Description: ${description}`;
 
     const response = await this.ai.models.generateContent({
-      model: 'gemini-2.5-flash', // The fast, high-performance model for text/JSON tasks
+      model: 'gemini-2.5-flash', 
       contents: prompt,
       config: {
-        // System instructions to guide the AI's persona
-        systemInstruction: 'You are an expert Agile Project Manager and Senior Software Architect. Estimate story points (1, 2, 3, 5, 8, 13), break down technical implementation sub-tasks, and identify potential architectural risks.',
-        // Enforce exact JSON response format matching our Mongoose model
+        // 👇 ADD TEMPERATURE HERE (0.1 forces consistent engineering estimations)
+        temperature: 0.1, 
+
+        systemInstruction: `You are an expert Agile Project Manager and Senior Software Architect. 
+
+CRITICAL INSTRUCTIONS FOR ESTIMATION:
+1. STORY POINTS: Assign Fibonacci values (1, 2, 3, 5, 8, 13) based on standard engineering complexity.
+2. SUBTASKS LIMIT: Always provide exactly 4 to 6 high-level technical subtasks. Do not over-granuralize. Focus strictly on: Frontend UI, Backend API Endpoint, Database/Model changes, and Security/Testing.
+3. RISK LEVEL RUBRIC:
+   - Low: Minor UI tweaks, text changes, or self-contained helper functions.
+   - Medium: Basic CRUD operations, simple schema additions, or trusted internal business logic.
+   - High: Involves cryptographic security, external third-party email providers, authentication states, or financial transactions.
+   
+Always evaluate tasks strictly against these defined boundaries to ensure 100% consistent outputs across identical prompts.`,
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -45,7 +56,6 @@ export class AiService implements OnModuleInit {
       },
     });
 
-    // The text field is guaranteed to be a valid JSON string matching the schema above
     return JSON.parse(response.text) as AiEstimationResponse;
   }
 }
