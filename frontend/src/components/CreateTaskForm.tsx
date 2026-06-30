@@ -99,10 +99,10 @@ export default function CreateTaskForm({ onSubmit, isLoading, errorFromServer }:
         <button
           type="submit"
           disabled={isLoading}
-          className={`w-full py-3 text-xs font-bold tracking-wide uppercase rounded-xl transition-all shadow-sm ${
+          className={`w-full py-3 text-xs font-bold tracking-wide uppercase rounded-xl transition-all shadow-sm cursor-pointer ${
             isLoading 
-              ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-              : 'bg-indigo-600 hover:bg-indigo-700 text-white active:scale-[0.99]'
+              ? 'bg-slate-100 text-slate-400 cursor-pointer' 
+              : 'bg-indigo-950 hover:bg-indigo-700 text-white active:scale-[0.99]'
           }`}
         >
           {isLoading ? (

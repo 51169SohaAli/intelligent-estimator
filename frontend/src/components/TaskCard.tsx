@@ -19,7 +19,7 @@ export default function TaskCard({ task }: TaskCardProps) {
   };
 
   return (
-    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-200 space-y-4">
+    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-200 space-y-4 cursor-pointer">
       <div className="flex justify-between items-start gap-2">
         <h4 className="font-semibold text-slate-800 text-base">{task.title}</h4>
         <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2.5 py-1 rounded-full border border-blue-200 whitespace-nowrap">
