@@ -1,6 +1,7 @@
 export interface AiEstimationResponse {
+  isValidTask: boolean;
+  validationErrorReason: string;
   aiStoryPoints: number;
-  aiSubTasks: string[];
   riskLevel: 'Low' | 'Medium' | 'High';
-  riskReason: string;
+  aiSubTasks: string[];
 }

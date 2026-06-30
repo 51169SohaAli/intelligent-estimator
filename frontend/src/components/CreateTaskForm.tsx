@@ -1,65 +1,120 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface CreateTaskFormProps {
   onSubmit: (title: string, description: string) => void;
   isLoading: boolean;
+  errorFromServer?: string;
 }
 
-export default function CreateTaskForm({ onSubmit, isLoading }: CreateTaskFormProps) {
+export default function CreateTaskForm({ onSubmit, isLoading, errorFromServer }: CreateTaskFormProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  // 🔄 Watch for incoming server errors and apply them directly to the display state
+  useEffect(() => {
+    if (errorFromServer) {
+      setErrorMessage(errorFromServer);
+    }
+  }, [errorFromServer]);
+
+  // 🔄 Clear form inputs automatically once loading stops AND there are no errors (Success case)
+  useEffect(() => {
+    if (!isLoading && !errorFromServer) {
+      setTitle('');
+      setDescription('');
+    }
+  }, [isLoading, errorFromServer]);
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !description.trim()) return;
+    setErrorMessage('');
+
+    // 1. Check for empty or blank spaces
+    if (!title.trim() || !description.trim()) {
+      setErrorMessage('Please fill out both the task title and description.');
+      return;
+    }
+
+    // 2. Minimum character count check
+    if (description.trim().length < 10) {
+      setErrorMessage('Please provide a slightly more descriptive requirements text (at least 10 characters).');
+      return;
+    }
+
+    // 3. Anti-Gibberish Check
+    const gibberishPattern = /(.)\1{3,}/;
+    if (gibberishPattern.test(title) || gibberishPattern.test(description)) {
+      setErrorMessage('Please enter valid project requirements rather than repeated characters.');
+      return;
+    }
+
+    // Pass parameters up to page.tsx handler
     onSubmit(title, description);
-    setTitle('');
-    setDescription('');
   };
 
   return (
-    <form onSubmit={handleFormSubmit} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 max-w-2xl mx-auto mb-10 space-y-4">
-      <h3 className="text-sm font-bold text-slate-700 tracking-wide uppercase">⚡ Generate New Intelligent Task</h3>
+    <div className="max-w-3xl mx-auto mb-12 bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
+      <h2 className="text-base font-bold text-slate-800 mb-4 tracking-tight">Generate New Intelligent Task</h2>
       
-      <div className="space-y-1">
-        <label className="text-xs font-semibold text-slate-500">Task Title</label>
-        <input
-          type="text"
-          placeholder="e.g., Implement Biometric Login"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          disabled={isLoading}
-          className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white disabled:opacity-60 transition-all"
-        />
-      </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Task Title</label>
+          <input
+            type="text"
+            placeholder="e.g., Implement JWT Password Reset Flow"
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              if (errorMessage) setErrorMessage(''); 
+            }}
+            disabled={isLoading}
+            className="w-full text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white rounded-xl px-4 py-3 outline-none transition-all"
+          />
+        </div>
 
-      <div className="space-y-1">
-        <label className="text-xs font-semibold text-slate-500">Description / Requirements</label>
-        <textarea
-          placeholder="Describe what needs to be built so Gemini can estimate it..."
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={isLoading}
-          rows={3}
-          className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white disabled:opacity-60 transition-all resize-none"
-        />
-      </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Feature Requirements & Details</label>
+          <textarea
+            placeholder="Describe what needs to be built so the AI can run a reliable architectural metrics analysis..."
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              if (errorMessage) setErrorMessage(''); 
+            }}
+            disabled={isLoading}
+            rows={3}
+            className="w-full text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white rounded-xl px-4 py-3 outline-none transition-all resize-none"
+          />
+        </div>
 
-      <button
-        type="submit"
-        disabled={isLoading || !title.trim() || !description.trim()}
-        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold py-2.5 rounded-lg shadow-sm transition-colors duration-150 flex items-center justify-center gap-2"
-      >
-        {isLoading ? (
-          <>
-            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            Gemini is evaluating engineering metrics...
-          </>
-        ) : (
-          'Analyze & Add to Board ✨'
+        {/* ⚠️ Dynamic Validation & AI Rejection Message Box */}
+        {errorMessage && (
+          <div className="text-xs font-semibold text-rose-500 bg-rose-50 border border-rose-100 rounded-xl p-3 animate-in fade-in slide-in-from-top-1 duration-200">
+            ⚠️ {errorMessage}
+          </div>
         )}
-      </button>
-    </form>
+
+        <button
+          type="submit"
+          disabled={isLoading}
+          className={`w-full py-3 text-xs font-bold tracking-wide uppercase rounded-xl transition-all shadow-sm ${
+            isLoading 
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+              : 'bg-indigo-600 hover:bg-indigo-700 text-white active:scale-[0.99]'
+          }`}
+        >
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2">
+              <span className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+              AI is Evaluating Architecture...
+            </div>
+          ) : (
+            'Analyze & Generate Task Card'
+          )}
+        </button>
+      </form>
+    </div>
   );
 }

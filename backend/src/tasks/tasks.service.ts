@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common'; // 👈 1. Add Inject and forwardRef
+import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common'; // 👈 1. Add Inject and forwardRef
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Task, TaskDocument } from './task.schema';
@@ -21,6 +21,18 @@ export class TasksService {
       createTaskDto.description,
     );
 
+    if (aiEstimation.isValidTask === false) {
+      console.log('🛑 AI rejected input as nonsense. Sending error to client.');
+      
+      // Emit the error event to the frontend using your injected gateway instance
+      this.tasksGateway.server.emit('taskCreationError', {
+        message: aiEstimation.validationErrorReason || "Invalid software task description."
+      });
+      
+      // Stop right here! Return a generic blank object or null so it never saves to MongoDB
+      return null as any; 
+    }
+
     const enrichedTaskData = {
       ...createTaskDto,
       ...aiEstimation,
@@ -32,6 +44,19 @@ export class TasksService {
     this.tasksGateway.broadcastTaskCreated(savedTask);
 
     return savedTask;
+  }
+
+  async updateStatus(id: string, status: 'Todo' | 'InProgress' | 'Done') {
+    // Find the task by ID and update its status field, returning the updated document
+    const updatedTask = await this.taskModel
+      .findByIdAndUpdate(id, { status }, { new: true })
+      .exec();
+
+    if (!updatedTask) {
+      throw new NotFoundException(`Task with ID "${id}" not found`);
+    }
+
+    return updatedTask;
   }
 
   async findAll(): Promise<Task[]> {
