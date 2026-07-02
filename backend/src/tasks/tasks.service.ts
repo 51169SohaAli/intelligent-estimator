@@ -24,15 +24,28 @@ export class TasksService {
     if (aiEstimation.isValidTask === false) {
       console.log('🛑 AI rejected input as nonsense. Sending error to client.');
       
-      // Emit the error event to the frontend using your injected gateway instance
-      this.tasksGateway.server.emit('taskCreationError', {
-        message: aiEstimation.validationErrorReason || "Invalid software task description."
-      });
+      const workspaceId = createTaskDto.workspace;
+      const errorMessage = aiEstimation.validationErrorReason || "Invalid software task description.";
+
+      if (workspaceId) {
+        // 🔑 Target only the specific workspace room with this validation error
+        this.tasksGateway.server.to(workspaceId).emit('taskCreationError', {
+          message: errorMessage
+        });
+      } else {
+        // Fallback to global emit if workspace context is missing
+        this.tasksGateway.server.emit('taskCreationError', {
+          message: errorMessage
+        });
+      }
       
-      // Stop right here! Return a generic blank object or null so it never saves to MongoDB
-      return null as any; 
+      // Throwing an actual exception here stops database execution safely and triggers
+      // the try/catch block inside tasks.gateway.ts to turn off the loading spinning state!
+      throw new Error(errorMessage);
     }
 
+    // Since createTaskDto includes the workspace identifier sent from the frontend,
+    // spreading it here ensures it's correctly mapped into the database document.
     const enrichedTaskData = {
       ...createTaskDto,
       ...aiEstimation,
@@ -59,7 +72,11 @@ export class TasksService {
     return updatedTask;
   }
 
-  async findAll(): Promise<Task[]> {
-    return this.taskModel.find().exec();
+  // 🔑 Updated to accept a workspace identifier so admins don't see each other's tasks
+  async findAll(workspaceId?: string): Promise<Task[]> {
+    if (workspaceId) {
+      return this.taskModel.find({ workspace: workspaceId }).sort({ createdAt: -1 }).exec();
+    }
+    return this.taskModel.find().sort({ createdAt: -1 }).exec();
   }
 }

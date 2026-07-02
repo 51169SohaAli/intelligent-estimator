@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TasksModule } from './tasks/tasks.module';
 import * as dotenv from 'dotenv';
+import { AuthModule } from './auth/auth.module';
 
 // Load environment variables
 dotenv.config();
@@ -11,6 +12,7 @@ dotenv.config();
     // Adding || '' ensures TypeScript knows it will always be a string
     MongooseModule.forRoot(process.env.MONGO_URI || ''),
     TasksModule,
+    AuthModule,
   ],
   controllers: [],
   providers: [],

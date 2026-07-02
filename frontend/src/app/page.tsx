@@ -1,6 +1,8 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import TaskCard from '../components/TaskCard';
 import CreateTaskForm from '../components/CreateTaskForm';
@@ -15,9 +17,12 @@ interface Task {
   aiStoryPoints: number;
   riskLevel: 'Low' | 'Medium' | 'High';
   aiSubTasks: string[];
+  workspace: string; // Ensure your frontend Task model maps this field
 }
 
 export default function Home() {
+  const { user, loading } = useAuth(); 
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -25,7 +30,7 @@ export default function Home() {
 
   // UI Control States
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false); // 🔑 Added state for creation modal
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Task Viewer Modal State
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -34,35 +39,60 @@ export default function Home() {
 
   const [hasMounted, setHasMounted] = useState(false);
 
+  // 🛡️ Redirect unauthorized users away from this protected page
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/register'); 
+    }
+  }, [user, loading, router]);
+
+  // 🔌 Setup WebSockets and fetch initial items scoped by Workspace
   useEffect(() => {
     setHasMounted(true);
 
+    if (!user || !user.workspace) return; // Wait until workspace context is present
+
+    const token = localStorage.getItem('token');
+
+    // 🏷️ Fetch tasks filtered explicitly by the current user's workspace
     const fetchTasks = async () => {
       try {
-        const response = await fetch('http://localhost:5000/tasks');
+        const response = await fetch(`http://localhost:5000/tasks?workspace=${user.workspace}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          }
+        });
         if (response.ok) {
           const data = await response.json();
           setTasks(data);
         }
       } catch (error) {
-        console.error('❌ Failed to fetch initial tasks from database:', error);
+        console.error('❌ Failed to fetch workspace tasks:', error);
       }
     };
     
     fetchTasks();
 
-    const socketInstance = io('http://localhost:5000');
+    // 🔑 Pass the workspace identification alongside the auth token 
+    const socketInstance = io('http://localhost:5000', {
+      auth: {
+        token: token, 
+      },
+      query: {
+        workspace: user.workspace // Tells the backend to join a room for this workspace
+      }
+    });
     setSocket(socketInstance);
 
     socketInstance.on('taskCreated', (newTask: Task) => {
       setTasks((prevTasks) => [newTask, ...prevTasks]);
       setIsLoading(false);
       setServerError(''); 
-      setIsCreateModalOpen(false); // 🔑 Automatically close modal on successful task creation
+      setIsCreateModalOpen(false);
     });
 
     socketInstance.on('exception', (error: any) => {
-      console.log("❌ Received error from server:", error);
       const errorMessage = error?.message || error || "An error occurred";
       setServerError(errorMessage);
       setIsLoading(false);
@@ -77,13 +107,19 @@ export default function Home() {
     return () => {
       socketInstance.disconnect();
     };
-  }, []);
+  }, [user]); 
 
   const handleCreateTask = async (title: string, description: string) => {
-    if (!socket) return;
+    if (!socket || !user) return;
     setServerError(''); 
     setIsLoading(true);
-    socket.emit('createTask', { title, description, status: 'Todo' });
+    // Explicitly pass workspace context during creation payload
+    socket.emit('createTask', { 
+      title, 
+      description, 
+      status: 'Todo',
+      workspace: user.workspace 
+    });
   };
 
   const onDragEnd = (result: DropResult) => {
@@ -100,10 +136,11 @@ export default function Home() {
       prevTasks.map((t) => (t._id === targetTaskId ? { ...t, status: newStatus } : t))
     );
 
-    if (socket) {
+    if (socket && user) {
       socket.emit('updateTaskStatus', {
         id: targetTaskId,
         status: newStatus,
+        workspace: user.workspace // Ensures status event stays restricted to this workspace room
       });
     }
   };
@@ -119,12 +156,33 @@ export default function Home() {
   };
 
   const columns = [
-    { title: 'To Do', status: 'Todo', headerBg: 'bg-indigo-500' },
-    { title: 'In Progress', status: 'InProgress', headerBg: 'bg-amber-500' },
-    { title: 'Done', status: 'Done', headerBg: 'bg-emerald-500' },
+    { 
+      title: 'To Do', 
+      status: 'Todo', 
+      statusDot: 'bg-indigo-400', 
+      badgeBg: 'bg-indigo-900 text-indigo-200 border-indigo-800'
+    },
+    { 
+      title: 'In Progress', 
+      status: 'InProgress', 
+      statusDot: 'bg-amber-400', 
+      badgeBg: 'bg-amber-950/60 text-amber-200 border-amber-900'
+    },
+    { 
+      title: 'Done', 
+      status: 'Done', 
+      statusDot: 'bg-emerald-400', 
+      badgeBg: 'bg-emerald-950/60 text-emerald-200 border-emerald-900'
+    },
   ];
 
-  if (!hasMounted) return null;
+  if (loading || !hasMounted || !user) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans font-bold text-xs text-slate-400 tracking-wider uppercase">
+        Authenticating session...
+      </div>
+    );
+  }
   
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans antialiased overflow-x-hidden text-slate-800">
@@ -133,18 +191,15 @@ export default function Home() {
 
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'md:pl-20' : 'md:pl-64'}`}>
         
-        {/* 🌅 Passed both props to handle menu toggles and opening the creation modal */}
         <Header 
           onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
           onOpenCreateModal={() => setIsCreateModalOpen(true)} 
         />
 
-        <main className="flex-1 p-8 overflow-y-auto max-w-7xl mx-auto w-full space-y-8">
+        <main className="flex-1 p-8 overflow-y-auto max-w-7xl mx-auto w-full">
           
-          {/* 💡 Note: CreateTaskForm was completely removed from here to clean up the canvas layout view! */}
-
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
               {columns.map((col) => {
                 const filteredTasks = tasks.filter((t) => t.status === col.status);
                 
@@ -154,19 +209,23 @@ export default function Home() {
                       <div 
                         ref={provided.innerRef}
                         {...provided.droppableProps}
-                        className={`rounded-2xl p-4 border flex flex-col min-h-[500px] transition-colors ${
-                          snapshot.isDraggingOver ? 'bg-slate-200/70 border-slate-300' : 'bg-slate-100 border-slate-200/60'
+                        className={`rounded-2xl border border-slate-200/80 flex flex-col min-h-[70vh] transition-all bg-slate-100/60 overflow-hidden shadow-sm ${
+                          snapshot.isDraggingOver ? 'bg-slate-200/60 scale-[1.01]' : ''
                         }`}
                       >
-                        <div className="flex items-center gap-2 mb-4 px-1">
-                          <span className={`w-2.5 h-2.5 rounded-full ${col.headerBg}`} />
-                          <h3 className="font-bold text-slate-700 text-sm tracking-wide uppercase">{col.title}</h3>
-                          <span className="ml-auto bg-slate-200 text-slate-600 text-xs font-semibold px-2 py-0.5 rounded-md">
+                        <div className="bg-indigo-950 px-4 py-3.5 flex items-center justify-between border-b border-indigo-900 shadow-xs">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${col.statusDot}`} />
+                            <h3 className="text-xs font-black font-medium tracking-wider text-white uppercase">
+                              {col.title}
+                            </h3>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${col.badgeBg}`}>
                             {filteredTasks.length}
                           </span>
                         </div>
 
-                        <div className="space-y-3 overflow-y-auto max-h-[600px] pr-1 flex-1">
+                        <div className="p-3 space-y-4 overflow-y-auto max-h-[75vh] flex-1">
                           {filteredTasks.map((task, index) => (
                             <Draggable key={task._id} draggableId={task._id} index={index}>
                               {(dragProvided, dragSnapshot) => (
@@ -175,8 +234,8 @@ export default function Home() {
                                   {...dragProvided.draggableProps}
                                   {...dragProvided.dragHandleProps}
                                   onClick={() => handleCardClick(task)} 
-                                  className={`transition transform active:scale-95 ${
-                                    dragSnapshot.isDragging ? 'shadow-xl rotate-1 z-50' : 'hover:-translate-y-0.5'
+                                  className={`transition-all ${
+                                    dragSnapshot.isDragging ? 'z-50' : ''
                                   }`}
                                 >
                                   <TaskCard task={task} />
@@ -186,7 +245,7 @@ export default function Home() {
                           ))}
                           {provided.placeholder}
                           {filteredTasks.length === 0 && (
-                            <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                            <div className="text-center py-16 border border-dashed border-slate-200/80 rounded-xl text-slate-400 text-xs font-medium bg-white/40">
                               No tasks here yet
                             </div>
                           )}
@@ -201,7 +260,6 @@ export default function Home() {
         </main>
       </div>
 
-      {/* ==================== ➕ NEW CENTERED FLOATING CREATION MODAL ==================== */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md transition-opacity" onClick={() => setIsCreateModalOpen(false)} />
@@ -217,7 +275,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* ==================== CENTERED POP-UP DETAILS DRAWER ==================== */}
       {isDrawerOpen && selectedTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md transition-opacity" onClick={() => setIsDrawerOpen(false)} />

@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type TaskDocument = Task & Document;
 
@@ -30,6 +30,9 @@ export class Task {
   // Human metric tracking
   @Prop({ default: null })
   actualHoursLogged: number; // For tracking variance later on
+
+  @Prop({ type: Types.ObjectId, ref: 'Workspace', required: true })
+  workspace: Types.ObjectId;
 }
 
 export const TaskSchema = SchemaFactory.createForClass(Task);
