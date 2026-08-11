@@ -2,20 +2,27 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Cookies from 'js-cookie';
 
-interface UserSession {
+export interface Workspace {
+  _id: string;
+  name?: string;
+}
+
+export interface UserSession {
   id: string;
   name: string;
   email: string;
-  role: string;
-  workspace: string;
-  slug: string;
+  role?: string;
+  workspaceId?: string;
+  workspace?: string | Workspace; // 👈 Updated so TS accepts both string & object
+  slug?: string;
 }
 
 interface AuthContextType {
   user: UserSession | null;
   loading: boolean;
-  login: (token: string, userData: UserSession) => void;
+  login: (token: string, userData: any) => void;
   logout: () => void;
 }
 
@@ -37,18 +44,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = (token: string, userData: UserSession) => {
+  const login = (token: string, userData: any) => {
+    // 1. Save in Cookies for Middleware protection
+    Cookies.set('token', token, { expires: 7, secure: true, sameSite: 'strict' });
+
+    // Normalize the backend response data
+    const normalizedUser: UserSession = {
+      ...userData,
+      workspaceId: userData.workspaceId || userData.workspace?._id || userData.workspace,
+      workspace: userData.workspace,
+    };
+
+    // 2. Save the fully normalized object to localStorage
     localStorage.setItem('token', token);
-    localStorage.setItem('user_data', JSON.stringify(userData));
-    setUser(userData);
+    localStorage.setItem('user_data', JSON.stringify(normalizedUser));
+
+    setUser(normalizedUser);
     router.push('/');
   };
 
   const logout = () => {
+    Cookies.remove('token');
     localStorage.removeItem('token');
     localStorage.removeItem('user_data');
     setUser(null);
-    router.push('/auth');
+    router.push('/login');
   };
 
   return (

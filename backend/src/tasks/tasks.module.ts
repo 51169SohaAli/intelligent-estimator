@@ -5,10 +5,12 @@ import { TasksController } from './tasks.controller';
 import { Task, TaskSchema } from './task.schema';
 import { AiModule } from '../ai/ai.module';
 import { TasksGateway } from './tasks.gateway'; // Import the new Gateway
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [MongooseModule.forFeature([{ name: Task.name, schema: TaskSchema }]),
-AiModule
+AiModule,
+forwardRef(() => AuthModule),
 ],
   controllers: [TasksController],
   providers: [TasksService, TasksGateway], 

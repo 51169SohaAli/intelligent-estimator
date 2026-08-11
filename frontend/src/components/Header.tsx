@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
-import { useAuth } from '@/context/AuthContext'; // 🔑 Import Auth Context
+import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -9,7 +10,7 @@ interface HeaderProps {
 
 export default function Header({ onToggleSidebar, onOpenCreateModal }: HeaderProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const { user, logout } = useAuth(); // 🔑 Consume authentication data
+  const { user, logout } = useAuth();
 
   // Dynamic initials helper (e.g., "Soha Ali" -> "SA")
   const getInitials = (name: string) => {
@@ -37,8 +38,12 @@ export default function Header({ onToggleSidebar, onOpenCreateModal }: HeaderPro
         </button>
 
         <div>
-          <h1 className="text-sm font-bold tracking-tight text-slate-800">Intelligent Agile Dashboard</h1>
-          <p className="text-[10px] text-slate-500 font-medium">Real-time AI task forecasting engine</p>
+          <h1 className="text-sm font-bold tracking-tight text-slate-800">
+            Intelligent Agile Task & Feature Estimator
+          </h1>
+          <p className="text-[10px] text-slate-500 font-medium">
+            Real-time AI task forecasting engine
+          </p>
         </div>
       </div>
       
@@ -97,18 +102,31 @@ export default function Header({ onToggleSidebar, onOpenCreateModal }: HeaderPro
                   <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Signed in as</p>
                   <p className="text-xs font-semibold text-slate-700 truncate">{user?.email || 'N/A'}</p>
                 </div>
-                <a href="#" className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors" onClick={() => setIsDropdownOpen(false)}>
+                
+                {/* Connected Navigation Links */}
+                <Link 
+                  href="/settings/profile" 
+                  className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors" 
+                  onClick={() => setIsDropdownOpen(false)}
+                >
                   👤 My Profile
-                </a>
-                <a href="#" className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors" onClick={() => setIsDropdownOpen(false)}>
-                  ⚙️ Account Settings
-                </a>
+                </Link>
+                
+                <Link 
+                  href="/settings/workspace" 
+                  className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors" 
+                  onClick={() => setIsDropdownOpen(false)}
+                >
+                  ⚙️ Workspace Settings
+                </Link>
+                
                 <div className="h-px bg-slate-100 my-1" />
+                
                 <button 
                   className="w-full text-left flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                   onClick={() => {
                     setIsDropdownOpen(false);
-                    logout(); // 🔑 Triggers dynamic logout
+                    logout();
                   }}
                 >
                   🚪 Sign Out

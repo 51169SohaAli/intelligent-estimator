@@ -18,7 +18,7 @@ export const UserSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, 'Please add a password'],
+      // 🚨 CHANGED: Removed required: true so social login works without passwords
       minlength: 6,
     },
     role: {
@@ -39,7 +39,9 @@ export const UserSchema = new mongoose.Schema(
 // This hook automatically hashes the password right before saving to MongoDB
 UserSchema.pre('save', async function () {
   // 'this' refers to the user document being saved
-  if (!this.isModified('password')) {
+  
+  // 🚨 CHANGED: If there is no password (OAuth users) or it hasn't been modified, skip hashing!
+  if (!this.password || !this.isModified('password')) {
     return; // Just return to stop execution and move to the next step
   }
 

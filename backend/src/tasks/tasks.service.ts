@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common'; // 👈 1. Add Inject and forwardRef
+import { Injectable, Inject, forwardRef, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Task, TaskDocument } from './task.schema';
@@ -10,57 +10,49 @@ export class TasksService {
   constructor(
     @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
     private aiService: AiService,
-    
-    @Inject(forwardRef(() => TasksGateway)) // 👈 2. Wrap it here!
+    @Inject(forwardRef(() => TasksGateway))
     private tasksGateway: TasksGateway, 
   ) {}
 
-  async create(createTaskDto: any): Promise<Task> {
-    const aiEstimation = await this.aiService.generateEstimation(
-      createTaskDto.title,
-      createTaskDto.description,
-    );
+async create(createTaskDto: any): Promise<Task> {
+  const aiEstimation = await this.aiService.generateEstimation(
+    createTaskDto.title,
+    createTaskDto.description,
+  );
 
-    if (aiEstimation.isValidTask === false) {
-      console.log('🛑 AI rejected input as nonsense. Sending error to client.');
-      
-      const workspaceId = createTaskDto.workspace;
-      const errorMessage = aiEstimation.validationErrorReason || "Invalid software task description.";
+  if (aiEstimation.isValidTask === false) {
+    console.log('🛑 AI rejected input as nonsense. Sending error to client.');
+    const workspaceId = createTaskDto.workspaceId;
+    const errorMessage = aiEstimation.validationErrorReason || "Invalid software task description.";
 
-      if (workspaceId) {
-        // 🔑 Target only the specific workspace room with this validation error
-        this.tasksGateway.server.to(workspaceId).emit('taskCreationError', {
-          message: errorMessage
-        });
-      } else {
-        // Fallback to global emit if workspace context is missing
-        this.tasksGateway.server.emit('taskCreationError', {
-          message: errorMessage
-        });
-      }
-      
-      // Throwing an actual exception here stops database execution safely and triggers
-      // the try/catch block inside tasks.gateway.ts to turn off the loading spinning state!
-      throw new Error(errorMessage);
+    if (workspaceId) {
+      this.tasksGateway.server.to(workspaceId).emit('taskCreationError', { message: errorMessage });
+    } else {
+      this.tasksGateway.server.emit('taskCreationError', { message: errorMessage });
     }
-
-    // Since createTaskDto includes the workspace identifier sent from the frontend,
-    // spreading it here ensures it's correctly mapped into the database document.
-    const enrichedTaskData = {
-      ...createTaskDto,
-      ...aiEstimation,
-    };
-
-    const newTask = new this.taskModel(enrichedTaskData);
-    const savedTask = await newTask.save();
-
-    this.tasksGateway.broadcastTaskCreated(savedTask);
-
-    return savedTask;
+    
+    throw new Error(errorMessage);
   }
 
+  // 🛠️ Ensure the incoming workspace identifier matches your schema property name
+  const enrichedTaskData = {
+    title: createTaskDto.title,
+    description: createTaskDto.description,
+    status: createTaskDto.status || 'Todo',
+    // Map workspaceId from the DTO directly into the schema's 'workspace' property
+    workspace: createTaskDto.workspaceId || createTaskDto.workspace, 
+    ...aiEstimation,
+  };
+
+  const newTask = new this.taskModel(enrichedTaskData);
+  const savedTask = await newTask.save();
+
+  this.tasksGateway.broadcastTaskCreated(savedTask);
+
+  return savedTask;
+}
+
   async updateStatus(id: string, status: 'Todo' | 'InProgress' | 'Done') {
-    // Find the task by ID and update its status field, returning the updated document
     const updatedTask = await this.taskModel
       .findByIdAndUpdate(id, { status }, { new: true })
       .exec();
@@ -72,11 +64,23 @@ export class TasksService {
     return updatedTask;
   }
 
-  // 🔑 Updated to accept a workspace identifier so admins don't see each other's tasks
-  async findAll(workspaceId?: string): Promise<Task[]> {
-    if (workspaceId) {
-      return this.taskModel.find({ workspace: workspaceId }).sort({ createdAt: -1 }).exec();
-    }
-    return this.taskModel.find().sort({ createdAt: -1 }).exec();
+  // 🛡️ WORKSPACE FILTER: Changed parameter name to match the database field name
+  async findAllByWorkspace(workspaceId: string): Promise<Task[]> {
+    // Look at how your schema is designed. If your task schema field is named "workspace", keep it here.
+    // If your schema field is named "workspaceId", change the key below to workspaceId!
+    return this.taskModel.find({ workspace: workspaceId }).sort({ createdAt: -1 }).exec();
   }
+
+  // In tasks.service.ts
+async update(id: string, updateTaskDto: any): Promise<Task> {
+  return this.taskModel.findByIdAndUpdate(id, updateTaskDto, { new: true }).exec();
+}
+
+async assignUser(taskId: string, assigneeId: string): Promise<Task> {
+  return this.taskModel.findByIdAndUpdate(taskId, { assignee: assigneeId }, { new: true }).exec();
+}
+
+async remove(id: string): Promise<any> {
+  return this.taskModel.findByIdAndDelete(id).exec();
+}
 }

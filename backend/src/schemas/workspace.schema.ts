@@ -25,6 +25,11 @@ export const WorkspaceSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    // 🔑 NEW: Unique random token for team invite links
+    inviteToken: {
+      type: String,
+      default: () => Math.random().toString(36).substring(2, 12),
+    },
   },
   { timestamps: true }
 );
