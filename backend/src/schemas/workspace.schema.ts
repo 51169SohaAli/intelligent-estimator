@@ -1,5 +1,15 @@
 import * as mongoose from 'mongoose';
 
+export interface Workspace {
+  name: string;
+  slug: string;
+  owner: mongoose.Types.ObjectId;
+  members: mongoose.Types.ObjectId[];
+  inviteToken: string;
+}
+
+export type WorkspaceDocument = Workspace & mongoose.Document;
+
 export const WorkspaceSchema = new mongoose.Schema(
   {
     name: {
@@ -25,7 +35,6 @@ export const WorkspaceSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
-    // 🔑 NEW: Unique random token for team invite links
     inviteToken: {
       type: String,
       default: () => Math.random().toString(36).substring(2, 12),

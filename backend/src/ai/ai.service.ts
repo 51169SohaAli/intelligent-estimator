@@ -12,7 +12,6 @@ export class AiService implements OnModuleInit {
 
   onModuleInit() {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    // Initialize the modern Google Gen AI client
     this.ai = new GoogleGenAI({ apiKey });
   }
 
@@ -21,13 +20,61 @@ export class AiService implements OnModuleInit {
     Task Title: ${title}
     Task Description: ${description}`;
 
+    // Define model cascade: try primary gemini-2.5-flash first, fall back to gemini-1.5-flash if 503 occurs
+    const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const responseText = await this.executeGenAiRequest(modelName, prompt);
+        const result = JSON.parse(responseText) as AiEstimationResponse;
+
+        // Validation check for nonsensical inputs
+        if (result.isValidTask === false) {
+          throw new WsException(
+            result.validationErrorReason || 'Please enter a valid technical software requirement.'
+          );
+        }
+
+        return result;
+      } catch (error: any) {
+        // Rethrow WsException immediately so non-technical input validation errors pass through cleanly
+        if (error instanceof WsException) {
+          throw error;
+        }
+
+        const is503 =
+          error?.status === 503 ||
+          error?.message?.includes('503') ||
+          error?.message?.includes('UNAVAILABLE') ||
+          error?.message?.includes('high demand');
+
+        if (is503) {
+          console.warn(
+            `[AiService] Model '${modelName}' hit 503 high demand. Attempting fallback/retry...`
+          );
+          lastError = error;
+          continue; // Move to next model in sequence
+        }
+
+        // Rethrow any non-503 execution errors
+        throw error;
+      }
+    }
+
+    // If both models hit 503 high demand
+    throw new WsException('AI Service is temporarily busy due to high demand. Please try again in a moment.');
+  }
+
+  /**
+   * Internal helper to execute content generation using @google/genai SDK
+   */
+  private async executeGenAiRequest(modelName: string, prompt: string): Promise<string> {
     const response = await this.ai.models.generateContent({
-      model: 'gemini-2.5-flash', 
+      model: modelName,
       contents: prompt,
       config: {
-        // 👇 ADD TEMPERATURE HERE (0.1 forces consistent engineering estimations)
-        temperature: 0.1, 
-
+        temperature: 0.1,
         systemInstruction: `You are an expert Agile Project Manager and Senior Software Architect. 
 
 CRITICAL INSTRUCTIONS FOR ESTIMATION:
@@ -44,42 +91,29 @@ CRITICAL INSTRUCTIONS FOR ESTIMATION:
 
 Always evaluate tasks strictly against these defined boundaries to ensure 100% consistent, professional outputs across identical prompts.`,
         responseMimeType: 'application/json',
-        // Add these to the response schema configuration you pass to Gemini
-responseSchema: {
-  type: "object",
-  properties: {
-    isValidTask: { 
-      type: "boolean", 
-      description: "Set to false if the input is non-technical nonsense or gibberish. Set to true if it is a valid IT/software task." 
-    },
-    validationErrorReason: { 
-      type: "string", 
-      description: "If isValidTask is false, provide a clean reason like 'Please enter a valid technical software requirement.' Otherwise, leave empty." 
-    },
-    aiStoryPoints: { type: "number" },
-    riskLevel: { type: "string", enum: ["Low", "Medium", "High"] },
-    aiSubTasks: { 
-      type: "array", 
-      items: { type: "string" } 
-    }
-  },
-  required: ["isValidTask", "validationErrorReason", "aiStoryPoints", "riskLevel", "aiSubTasks"]
-},
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isValidTask: {
+              type: Type.BOOLEAN,
+              description: 'Set to false if the input is non-technical nonsense or gibberish. Set to true if it is a valid IT/software task.',
+            },
+            validationErrorReason: {
+              type: Type.STRING,
+              description: 'If isValidTask is false, provide a clean reason like "Please enter a valid technical software requirement." Otherwise, leave empty.',
+            },
+            aiStoryPoints: { type: Type.NUMBER },
+            riskLevel: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
+            aiSubTasks: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+          },
+          required: ['isValidTask', 'validationErrorReason', 'aiStoryPoints', 'riskLevel', 'aiSubTasks'],
+        },
       },
     });
 
-    // 1. Parse the response from Gemini
-    const result = JSON.parse(response.text) as AiEstimationResponse;
-
-    // Replace 'throw new Error(...)' with this for a clean 400 Bad Request error:
-if (result.isValidTask === false) {
-  // Use WsException so NestJS knows it's a WebSocket error
-  throw new WsException(result.validationErrorReason);
-}
-
-    // 3. Only return the result if it is valid
-    return result;
-
-
+    return response.text;
   }
 }

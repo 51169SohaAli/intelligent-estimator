@@ -11,50 +11,59 @@ export class TasksService {
     @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
     private aiService: AiService,
     @Inject(forwardRef(() => TasksGateway))
-    private tasksGateway: TasksGateway, 
+    private tasksGateway: TasksGateway,
   ) {}
 
-async create(createTaskDto: any): Promise<Task> {
-  const aiEstimation = await this.aiService.generateEstimation(
-    createTaskDto.title,
-    createTaskDto.description,
-  );
+  async create(createTaskDto: any): Promise<Task> {
+    const workspaceId = createTaskDto.workspace || createTaskDto.workspaceId;
+    const userId = createTaskDto.creator || createTaskDto.userId;
 
-  if (aiEstimation.isValidTask === false) {
-    console.log('🛑 AI rejected input as nonsense. Sending error to client.');
-    const workspaceId = createTaskDto.workspaceId;
-    const errorMessage = aiEstimation.validationErrorReason || "Invalid software task description.";
+    // 1. Generate AI Estimation
+    const aiEstimation = await this.aiService.generateEstimation(
+      createTaskDto.title,
+      createTaskDto.description,
+    );
 
-    if (workspaceId) {
-      this.tasksGateway.server.to(workspaceId).emit('taskCreationError', { message: errorMessage });
-    } else {
-      this.tasksGateway.server.emit('taskCreationError', { message: errorMessage });
+    if (aiEstimation.isValidTask === false) {
+      console.log('🛑 AI rejected input as nonsense. Sending error to client.');
+      const errorMessage = aiEstimation.validationErrorReason || 'Invalid software task description.';
+
+      if (workspaceId) {
+        this.tasksGateway.server.to(workspaceId.toString()).emit('taskCreationError', { message: errorMessage });
+      } else {
+        this.tasksGateway.server.emit('taskCreationError', { message: errorMessage });
+      }
+
+      throw new Error(errorMessage);
     }
-    
-    throw new Error(errorMessage);
+
+    // 2. Prepare task payload with default creator & assignee set to task creator
+    const enrichedTaskData = {
+      title: createTaskDto.title,
+      description: createTaskDto.description,
+      status: createTaskDto.status || 'Todo',
+      workspace: workspaceId,
+      creator: userId,
+      assignee: userId, // 👈 Default assignee is set to task creator
+      ...aiEstimation,
+    };
+
+    const newTask = new this.taskModel(enrichedTaskData);
+    const savedTask = await newTask.save();
+
+    // 3. Populate creator & assignee before returning/broadcasting
+    const populatedTask = await savedTask.populate('assignee creator');
+
+    // 4. Broadcast to workspace room
+    this.tasksGateway.broadcastTaskCreated(populatedTask);
+
+    return populatedTask;
   }
 
-  // 🛠️ Ensure the incoming workspace identifier matches your schema property name
-  const enrichedTaskData = {
-    title: createTaskDto.title,
-    description: createTaskDto.description,
-    status: createTaskDto.status || 'Todo',
-    // Map workspaceId from the DTO directly into the schema's 'workspace' property
-    workspace: createTaskDto.workspaceId || createTaskDto.workspace, 
-    ...aiEstimation,
-  };
-
-  const newTask = new this.taskModel(enrichedTaskData);
-  const savedTask = await newTask.save();
-
-  this.tasksGateway.broadcastTaskCreated(savedTask);
-
-  return savedTask;
-}
-
-  async updateStatus(id: string, status: 'Todo' | 'InProgress' | 'Done') {
+  async updateStatus(id: string, status: 'Todo' | 'InProgress' | 'Done'): Promise<Task> {
     const updatedTask = await this.taskModel
       .findByIdAndUpdate(id, { status }, { new: true })
+      .populate('assignee creator')
       .exec();
 
     if (!updatedTask) {
@@ -64,23 +73,49 @@ async create(createTaskDto: any): Promise<Task> {
     return updatedTask;
   }
 
-  // 🛡️ WORKSPACE FILTER: Changed parameter name to match the database field name
   async findAllByWorkspace(workspaceId: string): Promise<Task[]> {
-    // Look at how your schema is designed. If your task schema field is named "workspace", keep it here.
-    // If your schema field is named "workspaceId", change the key below to workspaceId!
-    return this.taskModel.find({ workspace: workspaceId }).sort({ createdAt: -1 }).exec();
+    return this.taskModel
+      .find({ workspace: workspaceId })
+      .populate('assignee creator')
+      .sort({ createdAt: -1 })
+      .exec();
   }
 
-  // In tasks.service.ts
-async update(id: string, updateTaskDto: any): Promise<Task> {
-  return this.taskModel.findByIdAndUpdate(id, updateTaskDto, { new: true }).exec();
-}
+  async update(id: string, updateTaskDto: any): Promise<Task> {
+    const updatedTask = await this.taskModel
+      .findByIdAndUpdate(id, updateTaskDto, { new: true })
+      .populate('assignee creator')
+      .exec();
 
-async assignUser(taskId: string, assigneeId: string): Promise<Task> {
-  return this.taskModel.findByIdAndUpdate(taskId, { assignee: assigneeId }, { new: true }).exec();
-}
+    if (!updatedTask) {
+      throw new NotFoundException(`Task with ID "${id}" not found`);
+    }
 
-async remove(id: string): Promise<any> {
-  return this.taskModel.findByIdAndDelete(id).exec();
-}
+    return updatedTask;
+  }
+
+  async assignUser(taskId: string, assigneeId: string): Promise<Task> {
+    const updatedTask = await this.taskModel
+      .findByIdAndUpdate(
+        taskId,
+        { assignee: assigneeId ? assigneeId : null },
+        { new: true },
+      )
+      .populate('assignee creator')
+      .exec();
+
+    if (!updatedTask) {
+      throw new NotFoundException(`Task with ID "${taskId}" not found`);
+    }
+
+    return updatedTask;
+  }
+
+  async remove(id: string): Promise<any> {
+    const deletedTask = await this.taskModel.findByIdAndDelete(id).exec();
+    if (!deletedTask) {
+      throw new NotFoundException(`Task with ID "${id}" not found`);
+    }
+    return deletedTask;
+  }
 }

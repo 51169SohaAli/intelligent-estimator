@@ -33,6 +33,14 @@ export class Task {
 
   @Prop({ type: Types.ObjectId, ref: 'Workspace', required: true })
   workspace: Types.ObjectId;
+
+  // 👈 ADDED: Creator user reference
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  creator: Types.ObjectId;
+
+  // 👈 ADDED: Assignee user reference
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  assignee: Types.ObjectId;
 }
 
 export const TaskSchema = SchemaFactory.createForClass(Task);

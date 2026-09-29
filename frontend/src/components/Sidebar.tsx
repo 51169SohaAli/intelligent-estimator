@@ -1,7 +1,7 @@
 'use client';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation'; // 👈 Active link detection
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
 interface SidebarProps {
@@ -16,7 +16,53 @@ export default function Sidebar({
   onClose,
 }: SidebarProps) {
   const { user } = useAuth();
-  const pathname = usePathname(); // 👈 Current route pathname
+  const pathname = usePathname();
+  const [workspaceName, setWorkspaceName] = useState<string>('Agile Suite');
+
+  const isAdmin = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'owner';
+
+  useEffect(() => {
+    const fetchWorkspace = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const workspaceId = user?.workspaceId || user?.workspace;
+
+        if (!token || !workspaceId) return;
+
+        const res = await fetch(`http://localhost:5000/workspaces/${workspaceId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.name) {
+            setWorkspaceName(data.name);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load active workspace name:', err);
+      }
+    };
+
+    fetchWorkspace();
+
+    // 🔴 Listen for instant update event from Settings page
+    const handleWorkspaceUpdate = (e: CustomEvent) => {
+      if (e.detail?.name) {
+        setWorkspaceName(e.detail.name);
+      } else {
+        fetchWorkspace(); // fallback re-fetch
+      }
+    };
+
+    window.addEventListener('workspaceUpdated', handleWorkspaceUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener('workspaceUpdated', handleWorkspaceUpdate as EventListener);
+    };
+  }, [pathname, user]);
 
   const getInitials = (name: string) => {
     return name
@@ -58,10 +104,10 @@ export default function Sidebar({
               ✨
             </div>
             {!isCollapsed && (
-              <div className="flex flex-col animate-in fade-in duration-200">
+              <div className="flex flex-col animate-in fade-in duration-200 overflow-hidden">
                 <h2 className="font-bold tracking-tight text-white text-sm whitespace-nowrap">SprintFlow</h2>
-                <p className="text-[10px] text-purple-300 font-semibold tracking-wider uppercase">
-                  {user?.workspace || 'Agile Suite'}
+                <p className="text-[10px] text-purple-300 font-semibold tracking-wider uppercase truncate">
+                  {workspaceName}
                 </p>
               </div>
             )}
@@ -70,57 +116,59 @@ export default function Sidebar({
           {/* Nav Items */}
           <nav className="space-y-3">
             <Link 
-  href="/" 
-  onClick={() => {
-    if (onClose) onClose();
-  }}
-  className={`flex items-center rounded-xl font-semibold text-sm transition-all shadow-sm relative group ${
-    isDashboardActive 
-      ? 'bg-white/10 border border-white/10 text-white' 
-      : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
-  } ${
-    isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'
-  }`}
->
-  <span className="text-base">📊</span>
-  {!isCollapsed && <span className="animate-in fade-in duration-200">Dashboard</span>}
-
-  {isCollapsed && (
-    <span className="absolute left-16 top-1/2 -translate-y-1/2 bg-slate-900 border border-slate-700/50 text-white text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap shadow-2xl invisible opacity-0 -translate-x-2 transition-all duration-200 group-hover:visible group-hover:opacity-100 group-hover:translate-x-0 z-50 pointer-events-none">
-      Dashboard
-      <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/50 rotate-45" />
-    </span>
-  )}
-</Link>
-            
-            {/* Settings Link */}
-            <Link 
-              href="/settings/workspace" 
-              onClick={onClose}
-              className={`flex items-center rounded-xl font-medium text-sm transition-all relative group ${
-                isSettingsActive 
-                  ? 'bg-white/10 border border-white/10 text-white font-semibold' 
+              href="/" 
+              onClick={() => {
+                if (onClose) onClose();
+              }}
+              className={`flex items-center rounded-xl font-semibold text-sm transition-all shadow-sm relative group ${
+                isDashboardActive 
+                  ? 'bg-white/10 border border-white/10 text-white' 
                   : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
               } ${
                 isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'
               }`}
             >
-              <span className="text-base">⚙️</span>
-              {!isCollapsed && <span className="animate-in fade-in duration-200">Settings</span>}
+              <span className="text-base">📊</span>
+              {!isCollapsed && <span className="animate-in fade-in duration-200">Dashboard</span>}
 
               {isCollapsed && (
                 <span className="absolute left-16 top-1/2 -translate-y-1/2 bg-slate-900 border border-slate-700/50 text-white text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap shadow-2xl invisible opacity-0 -translate-x-2 transition-all duration-200 group-hover:visible group-hover:opacity-100 group-hover:translate-x-0 z-50 pointer-events-none">
-                  Settings
+                  Dashboard
                   <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/50 rotate-45" />
                 </span>
               )}
             </Link>
+            
+            {/* Settings Link - Rendered conditionally based on role */}
+            {isAdmin && (
+              <Link 
+                href="/settings/workspace" 
+                onClick={onClose}
+                className={`flex items-center rounded-xl font-medium text-sm transition-all relative group ${
+                  isSettingsActive 
+                    ? 'bg-white/10 border border-white/10 text-white font-semibold' 
+                    : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+                } ${
+                  isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'
+                }`}
+              >
+                <span className="text-base">⚙️</span>
+                {!isCollapsed && <span className="animate-in fade-in duration-200">Settings</span>}
+
+                {isCollapsed && (
+                  <span className="absolute left-16 top-1/2 -translate-y-1/2 bg-slate-900 border border-slate-700/50 text-white text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap shadow-2xl invisible opacity-0 -translate-x-2 transition-all duration-200 group-hover:visible group-hover:opacity-100 group-hover:translate-x-0 z-50 pointer-events-none">
+                    Settings
+                    <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/50 rotate-45" />
+                  </span>
+                )}
+              </Link>
+            )}
           </nav>
         </div>
 
         {/* User Account Profile Link */}
         <Link 
-          href="/profile"
+          href="/settings/profile"
           onClick={onClose}
           className={`flex items-center rounded-2xl transition-all relative group cursor-pointer ${
             isProfileActive 
@@ -136,7 +184,7 @@ export default function Sidebar({
           {!isCollapsed && (
             <div className="overflow-hidden animate-in fade-in duration-200">
               <h4 className="text-xs font-bold text-white truncate">{user?.name || 'Loading...'}</h4>
-              <p className="text-[10px] text-slate-400 truncate">
+              <p className="text-[10px] text-slate-400 truncate capitalize">
                 {user?.role ? `${user.role} Account` : 'User Account'}
               </p>
             </div>

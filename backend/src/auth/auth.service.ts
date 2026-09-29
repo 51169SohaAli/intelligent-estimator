@@ -17,34 +17,73 @@ export class AuthService {
   ) {}
 
   async registerManager(dto: RegisterManagerDto) {
-    const { name, email, password, companyName } = dto;
+  const { name, email, password, companyName } = dto;
 
-    if (!name || !email || !password || !companyName) {
-      throw new BadRequestException('All fields are required');
-    }
+  // 1. Basic validation
+  if (!name || !email || !password) {
+    throw new BadRequestException('Name, email, and password are required');
+  }
 
-    const userExists = await this.userModel.findOne({ email });
-    if (userExists) {
-      throw new BadRequestException('User with this email already exists');
-    }
+  const userExists = await this.userModel.findOne({ email });
+  if (userExists) {
+    throw new BadRequestException('User with this email already exists');
+  }
 
-    const slug = companyName
-      .toLowerCase()
-      .trim()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/[\s_-]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+  // 2. Determine if user is creating a new workspace OR joining via invite
+  const isJoiningWorkspace = !companyName || companyName === 'Joined Workspace';
 
-    const workspaceExists = await this.workspaceModel.findOne({ slug });
-    if (workspaceExists) {
-      throw new BadRequestException('This company name is already registered');
-    }
-
-    try {
+  try {
+    if (isJoiningWorkspace) {
+      // --- INVITED MEMBER FLOW ---
+      // Create user with default 'Member' role and no workspace yet
+      // (The /workspaces/join call will assign workspace & token right after)
       const newUser = await this.userModel.create({
         name,
         email,
-        password, 
+        password,
+        role: 'Member',
+      });
+
+      const token = jwt.sign(
+        { id: newUser._id, role: newUser.role },
+        process.env.JWT_SECRET || 'sprintflow_fallback_secret_key',
+        { expiresIn: '30d' },
+      );
+
+      return {
+        message: 'Registration successful!',
+        token,
+        user: {
+          id: newUser._id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          workspace: null,
+          workspaceId: null,
+        },
+      };
+    } else {
+      // --- WORKSPACE CREATOR / ADMIN FLOW ---
+      if (!companyName.trim()) {
+        throw new BadRequestException('Company name is required');
+      }
+
+      const slug = companyName
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+      const workspaceExists = await this.workspaceModel.findOne({ slug });
+      if (workspaceExists) {
+        throw new BadRequestException('This company name is already registered');
+      }
+
+      const newUser = await this.userModel.create({
+        name,
+        email,
+        password,
         role: 'Admin',
       });
 
@@ -61,7 +100,7 @@ export class AuthService {
       const token = jwt.sign(
         { id: newUser._id, workspaceId: newWorkspace._id, role: newUser.role },
         process.env.JWT_SECRET || 'sprintflow_fallback_secret_key',
-        { expiresIn: '30d' }
+        { expiresIn: '30d' },
       );
 
       return {
@@ -77,11 +116,12 @@ export class AuthService {
           workspaceId: newWorkspace._id.toString(),
         },
       };
-    } catch (error) {
-      console.error(error);
-      throw new InternalServerErrorException('Server error during registration');
     }
+  } catch (error) {
+    console.error(error);
+    throw new InternalServerErrorException('Server error during registration');
   }
+}
 
   async login(dto: LoginDto) {
     const { email, password } = dto;

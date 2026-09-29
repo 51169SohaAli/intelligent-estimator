@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
 
@@ -9,13 +9,15 @@ export interface Workspace {
   name?: string;
 }
 
+// 1. Update UserSession interface to allow both id and _id safely
 export interface UserSession {
-  id: string;
+  id?: string;
+  _id?: string;
   name: string;
   email: string;
   role?: string;
   workspaceId?: string;
-  workspace?: string | Workspace; // 👈 Updated so TS accepts both string & object
+  workspace?: string | Workspace;
   slug?: string;
 }
 
@@ -24,6 +26,7 @@ interface AuthContextType {
   loading: boolean;
   login: (token: string, userData: any) => void;
   logout: () => void;
+  fetchUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,29 +36,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  // On mount, check if user details exist in localStorage
+  // Helper to normalize backend user payloads cleanly
+  const normalizeUser = (userData: any): UserSession => {
+    const userId = userData.id || userData._id;
+    return {
+      ...userData,
+      id: userId,
+      _id: userId,
+      workspaceId: userData.workspaceId || userData.workspace?._id || userData.workspace,
+      workspace: userData.workspace,
+    };
+  };
+
+  const fetchUser = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const res = await fetch('http://localhost:5000/auth/me', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const userData = await res.json();
+        const normalizedUser = normalizeUser(userData);
+
+        localStorage.setItem('user_data', JSON.stringify(normalizedUser));
+        setUser(normalizedUser);
+      }
+    } catch (err) {
+      console.error('Failed to refresh user profile:', err);
+    }
+  }, []);
+
   useEffect(() => {
     const savedUser = localStorage.getItem('user_data');
     const token = localStorage.getItem('token');
 
     if (savedUser && token) {
-      setUser(JSON.parse(savedUser));
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error('Failed to parse cached user:', e);
+      }
     }
     setLoading(false);
   }, []);
 
   const login = (token: string, userData: any) => {
-    // 1. Save in Cookies for Middleware protection
     Cookies.set('token', token, { expires: 7, secure: true, sameSite: 'strict' });
 
-    // Normalize the backend response data
-    const normalizedUser: UserSession = {
-      ...userData,
-      workspaceId: userData.workspaceId || userData.workspace?._id || userData.workspace,
-      workspace: userData.workspace,
-    };
+    const normalizedUser = normalizeUser(userData);
 
-    // 2. Save the fully normalized object to localStorage
     localStorage.setItem('token', token);
     localStorage.setItem('user_data', JSON.stringify(normalizedUser));
 
@@ -68,11 +102,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('token');
     localStorage.removeItem('user_data');
     setUser(null);
-    router.push('/login');
+    router.push('/register');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, fetchUser }}>
       {children}
     </AuthContext.Provider>
   );

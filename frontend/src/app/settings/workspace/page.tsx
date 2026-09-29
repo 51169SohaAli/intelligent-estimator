@@ -2,10 +2,17 @@
 
 import { useState, useEffect } from 'react';
 
+interface Member {
+  _id: string;
+  name: string;
+  email: string;
+}
 
 export default function WorkspaceSettingsPage() {
   const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceId, setWorkspaceId] = useState('');
   const [inviteToken, setInviteToken] = useState('');
+  const [members, setMembers] = useState<Member[]>([]);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,7 +25,7 @@ export default function WorkspaceSettingsPage() {
       setOrigin(window.location.origin);
     }
 
-    const fetchWorkspace = async () => {
+    const fetchWorkspaceData = async () => {
       try {
         const token = localStorage.getItem('token');
 
@@ -28,7 +35,7 @@ export default function WorkspaceSettingsPage() {
           return;
         }
 
-        // FIXED: Pointing directly to NestJS server on port 5000
+        // 1. Fetch current workspace details
         const res = await fetch('http://localhost:5000/workspaces/current', {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -45,6 +52,22 @@ export default function WorkspaceSettingsPage() {
         const workspaceData = data.workspace || data;
         setWorkspaceName(workspaceData.name || '');
         setInviteToken(workspaceData.inviteToken || '');
+        setWorkspaceId(workspaceData._id || '');
+
+        // 2. Fetch workspace members if workspace ID exists
+        const targetId = workspaceData._id;
+        if (targetId) {
+          const membersRes = await fetch(`http://localhost:5000/workspaces/${targetId}/members`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          const membersData = await membersRes.json();
+          if (membersRes.ok) {
+            setMembers(membersData);
+          }
+        }
       } catch (err: any) {
         console.error('Fetch error:', err);
         setStatusMessage({
@@ -56,7 +79,7 @@ export default function WorkspaceSettingsPage() {
       }
     };
 
-    fetchWorkspace();
+    fetchWorkspaceData();
   }, []);
 
   const inviteUrl = inviteToken ? `${origin}/join/${inviteToken}` : '';
@@ -75,9 +98,8 @@ export default function WorkspaceSettingsPage() {
 
     try {
       const token = localStorage.getItem('token');
-      // FIXED: Endpoint points to NestJS on port 5000
       const res = await fetch('http://localhost:5000/workspaces/current', {
-        method: 'PATCH', // or PUT depending on your controller setup
+        method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -89,10 +111,19 @@ export default function WorkspaceSettingsPage() {
 
       if (res.ok) {
         setStatusMessage({ type: 'success', text: 'Workspace updated successfully!' });
+
+        const updatedWorkspace = data.workspace || data;
+
+        window.dispatchEvent(
+          new CustomEvent('workspaceUpdated', {
+            detail: { name: updatedWorkspace.name || workspaceName },
+          })
+        );
       } else {
         setStatusMessage({ type: 'error', text: data.message || 'Failed to update workspace.' });
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error('Save error:', err);
       setStatusMessage({ type: 'error', text: 'An error occurred while saving.' });
     } finally {
       setSaving(false);
@@ -104,7 +135,6 @@ export default function WorkspaceSettingsPage() {
 
     try {
       const token = localStorage.getItem('token');
-      // FIXED: Pointing directly to NestJS server on port 5000
       const res = await fetch('http://localhost:5000/workspaces/reset-invite', {
         method: 'POST',
         headers: {
@@ -202,7 +232,7 @@ export default function WorkspaceSettingsPage() {
                 <button
                   onClick={handleCopy}
                   disabled={!inviteUrl}
-                  className="rounded-lg bg-gray-900 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-gray-800 whitespace-nowrap disabled:opacity-50"
+                  className="rounded-lg bg-gray-900 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-gray-800 whitespace-nowrap disabled:opacity-50 cursor-pointer"
                 >
                   {copied ? 'Copied! ✓' : 'Copy Link'}
                 </button>
@@ -211,11 +241,40 @@ export default function WorkspaceSettingsPage() {
               <div className="pt-2">
                 <button
                   onClick={handleResetToken}
-                  className="text-xs text-red-600 hover:text-red-700 hover:underline font-medium"
+                  className="text-xs text-red-600 hover:text-red-700 hover:underline font-medium cursor-pointer"
                 >
                   Reset Invite Link (Invalidates existing link)
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* Section 3: Team Members List */}
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 p-5">
+              <h2 className="text-base font-semibold text-gray-900">
+                Workspace Members ({members.length})
+              </h2>
+              <p className="text-xs text-gray-500">
+                Active team members in this workspace.
+              </p>
+            </div>
+
+            <div className="p-5">
+              {members.length === 0 ? (
+                <p className="text-xs text-gray-500">No members found in this workspace yet.</p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {members.map((member) => (
+                    <div key={member._id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{member.name || 'Unnamed Member'}</p>
+                        <p className="text-xs text-gray-500">{member.email}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </>

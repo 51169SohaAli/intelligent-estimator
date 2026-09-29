@@ -12,8 +12,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { TasksService } from './tasks.service';
 import { UseFilters, Inject, forwardRef } from '@nestjs/common';
-// 1. Import your Task entity/interface/schema to resolve `Partial<Task>`
-import { Task } from './task.schema'; // Update this path to match your Task schema/interface
+import { Task } from './task.schema';
 
 @WebSocketGateway({
   cors: {
@@ -56,12 +55,14 @@ export class TasksGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   ) {
     console.log('📥 Backend Gateway received "createTask" event! Data:', data);
     try {
-      const newTask = await this.tasksService.create(data);
-      const workspaceId = data.workspace?.toString();
+      // Extract creator ID from client data or event payload
+      const userId = client.data.user?.id || client.data.user?._id || data.creator || data.userId;
 
-      if (workspaceId) {
-        this.server.to(workspaceId).emit('task-created', newTask);
-      }
+      // Service handles creation, population, and workspace broadcasting
+      await this.tasksService.create({
+        ...data,
+        creator: userId,
+      });
 
       client.emit('task-created-success');
     } catch (error: any) {
@@ -82,10 +83,10 @@ export class TasksGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
       const updatedTask = await this.tasksService.updateStatus(data.id, data.status);
 
       if (data.workspace) {
-        this.server.to(data.workspace).emit('taskStatusUpdated', updatedTask);
-        console.log(`📢 Broadcasted "taskStatusUpdated" to workspace room ${data.workspace} for task ${data.id}`);
+        this.server.to(data.workspace).emit('task-updated', updatedTask);
+        console.log(`📢 Broadcasted "task-updated" to workspace room ${data.workspace} for task ${data.id}`);
       } else {
-        this.server.emit('taskStatusUpdated', updatedTask);
+        this.server.emit('task-updated', updatedTask);
       }
     } catch (error: any) {
       console.error('❌ Error updating task status over WebSocket:', error.message);
@@ -93,7 +94,7 @@ export class TasksGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
   }
 
   broadcastTaskCreated(task: any) {
-    const workspaceId = task.workspace?.toString();
+    const workspaceId = task.workspace?._id?.toString() || task.workspace?.toString();
     if (workspaceId) {
       this.server.to(workspaceId).emit('task-created', task);
       console.log(`📢 Broadcasted "task-created" explicitly to workspace room: ${workspaceId}`);
@@ -121,7 +122,6 @@ export class TasksGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      // Ensure assignUser exists in your TasksService or map it to your update function
       const updatedTask = await this.tasksService.assignUser(payload.taskId, payload.assigneeId);
       this.server.to(payload.workspaceId).emit('task-updated', updatedTask);
     } catch (error: any) {
@@ -135,7 +135,6 @@ export class TasksGateway implements OnGatewayInit, OnGatewayConnection, OnGatew
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      // Ensure remove or delete exists in your TasksService
       await this.tasksService.remove(payload.taskId);
       this.server.to(payload.workspaceId).emit('task-deleted', { taskId: payload.taskId });
     } catch (error: any) {

@@ -12,6 +12,9 @@ export default function Header({ onToggleSidebar, onOpenCreateModal }: HeaderPro
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const { user, logout } = useAuth();
 
+  // Role check for admin/owner privilege
+  const isAdmin = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'owner';
+
   // Dynamic initials helper (e.g., "Soha Ali" -> "SA")
   const getInitials = (name: string) => {
     return name
@@ -87,7 +90,7 @@ export default function Header({ onToggleSidebar, onOpenCreateModal }: HeaderPro
                   ▼
                 </span>
               </h4>
-              <p className="text-[9px] text-slate-400 font-medium tracking-wide">
+              <p className="text-[9px] text-slate-400 font-medium tracking-wide capitalize">
                 {user?.role ? `${user.role} Account` : 'User Account'}
               </p>
             </div>
@@ -112,13 +115,16 @@ export default function Header({ onToggleSidebar, onOpenCreateModal }: HeaderPro
                   👤 My Profile
                 </Link>
                 
-                <Link 
-                  href="/settings/workspace" 
-                  className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors" 
-                  onClick={() => setIsDropdownOpen(false)}
-                >
-                  ⚙️ Workspace Settings
-                </Link>
+                {/* Conditionally rendered based on admin/owner role */}
+                {isAdmin && (
+                  <Link 
+                    href="/settings/workspace" 
+                    className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors" 
+                    onClick={() => setIsDropdownOpen(false)}
+                  >
+                    ⚙️ Workspace Settings
+                  </Link>
+                )}
                 
                 <div className="h-px bg-slate-100 my-1" />
                 
